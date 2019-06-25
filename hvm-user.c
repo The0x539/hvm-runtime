@@ -23,12 +23,12 @@ int main (int argc, char ** argv)
 
     struct hvm_del_req req;
 
-    req.port = 0x7c4;
-    req.val  = 0xb;
+    req.foo = "mountain peak";
+    req.bar = 98734;
+    req.baz = "twenty-nine pies";
 
-    printf("Performing delegation ioctl\n");
-    ret = ioctl(fd, HVM_DEL_IOCTL_PERFORM_OUTB,
-        (void*)&req);
+    printf("Performing delegation ioctl (req.foo = %p)\n", &req.foo);
+    ret = ioctl(fd, HVM_DEL_REQ_FOO, (void*)&req);
 
     if (ret != 0) {
         fprintf(stderr, "Ioctl failed: %s\n", strerror(errno));

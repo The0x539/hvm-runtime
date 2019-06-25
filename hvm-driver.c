@@ -85,30 +85,32 @@ hvm_del_release (struct inode * inode,
 
 static long
 hvm_del_ioctl (struct file * file,
-               unsigned int ioctl,
+               volatile unsigned int ioctl,
+               // ^ GCC shoots itself in the foot at compile time
                unsigned long arg)
 {
     void __user * argp = (void __user*)arg;
     struct hvm_del_req * req = NULL;
+    const uint16_t port = HVM_DEL_MAGIC_PORT;
 
-    DEBUG("IOCTL %d\n", ioctl);
+    INFO("IOCTL %d\n", ioctl);
 
-    switch (ioctl) {
-        case HVM_DEL_IOCTL_PERFORM_OUTB: 
-            req = kzalloc(sizeof(*req), GFP_KERNEL);
-            if (copy_from_user(req, argp, sizeof(*req)) != 0) {
-                ERROR("Could not copy request from user\n");
-                return -EFAULT;
-            }
-            INFO("Performing outb ioctl (port=%x, val=%x)\n",
-                    req->port, req->val);
-            outb(req->val, req->port);
-            kfree(req);
-            break;
-        default:
-            ERROR("Unknown hvm del request: %d\n", ioctl);
-            return -EINVAL;
+    req = kzalloc(sizeof(*req), GFP_KERNEL);
+    if (copy_from_user(req, argp, sizeof(*req)) != 0) {
+        ERROR("Could not copy request from user\n");
+        return -EFAULT;
     }
+
+    INFO("foo %llx\n", req);
+
+    asm volatile (
+            "movq %0, %%r8;"
+            "out %1, %2;"
+            :
+            : "r" (req), "r" (ioctl), "r" (port)
+            : "%r8"
+            );
+    kfree(req);
 
     return 0;
 }

@@ -1,11 +1,14 @@
 #ifndef __DRIVER_API__
 #define __DRIVER_API__
 
-#define HVM_DEL_IOCTL_PERFORM_OUTB 0x20
+#define HVM_DEL_MAGIC_PORT 0x7C4
+
+#define HVM_DEL_REQ_FOO 0x1
 
 struct hvm_del_req {
-    unsigned short port;
-    unsigned char val;
+    char *foo;
+    int bar;
+    char *baz;
 };
 
 #endif
