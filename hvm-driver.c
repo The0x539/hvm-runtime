@@ -32,7 +32,6 @@ MODULE_VERSION(VERSION);
 #define DEBUG(fmt, args...)
 #endif
 
-
 struct hvm_del_info {
     struct mutex lock;
     dev_t chrdev;
@@ -85,34 +84,133 @@ hvm_del_release (struct inode * inode,
 
 static long
 hvm_del_ioctl (struct file * file,
-               volatile unsigned int ioctl,
-               // ^ GCC shoots itself in the foot at compile time
+               unsigned int ioctl,
                unsigned long arg)
 {
     void __user * argp = (void __user*)arg;
-    struct hvm_del_req * req = NULL;
+    struct hvm_del_args * user_args = NULL;
+	struct hvm_del_args * args = NULL;
     const uint16_t port = HVM_DEL_MAGIC_PORT;
+	size_t kernel_args_phys_addr = 0;
+	size_t path_len = 0;
+
+	volatile ssize_t retval = 0;
+
+	char *buf = NULL;
 
     INFO("IOCTL %d\n", ioctl);
 
-    req = kzalloc(sizeof(*req), GFP_KERNEL);
-    if (copy_from_user(req, argp, sizeof(*req)) != 0) {
+    user_args = kzalloc(sizeof(*user_args), GFP_KERNEL);
+    if (copy_from_user(user_args, argp, sizeof(*user_args)) != 0) {
         ERROR("Could not copy request from user\n");
+		kfree(user_args);
         return -EFAULT;
     }
 
-    INFO("foo %llx\n", req);
+	args = kzalloc(sizeof(*args), GFP_KERNEL);
+	kernel_args_phys_addr = virt_to_phys(args);
 
-    asm volatile (
-            "movq %0, %%r8;"
-            "out %1, %2;"
-            :
-            : "r" (req), "r" (ioctl), "r" (port)
-            : "%r8"
-            );
-    kfree(req);
+	INFO("hvm_del_req 0x%X 0x%016lX\n", ioctl, kernel_args_phys_addr);
 
-    return 0;
+	switch (ioctl) {
+	case HVM_DEL_REQ_OPEN:
+		path_len = strnlen_user((char __user*)user_args->arg1, HOST_MAX_PATH);
+		if (path_len == 0) {
+			ERROR("Could not determine length of host filepath\n");
+			kfree(user_args);
+			kfree(args);
+			return -EFAULT;
+		} else if (path_len > HOST_MAX_PATH) {
+			ERROR("Host filepath was too long\n");
+			kfree(user_args);
+			kfree(args);
+			return -ENAMETOOLONG;
+		}
+
+		buf = kzalloc(path_len, GFP_KERNEL);
+		if (copy_from_user((char __user*)user_args->arg1, buf, path_len) != 0) {
+			ERROR("Could not copy host filepath from user\n");
+			kfree(user_args);
+			kfree(args);
+			kfree(buf);
+			return -EFAULT;
+		}
+
+		args->arg1 = (size_t) buf;
+		args->arg2 = user_args->arg2;
+		args->arg3 = user_args->arg3;
+		break;
+
+	case HVM_DEL_REQ_READ:
+		buf = kzalloc(user_args->arg3, GFP_KERNEL);
+		
+		args->arg1 = user_args->arg1;
+		args->arg2 = (size_t) buf;
+		args->arg3 = user_args->arg3;
+		break;
+
+	case HVM_DEL_REQ_WRITE:
+		buf = kzalloc(user_args->arg3, GFP_KERNEL);
+		if (copy_from_user((void __user*)user_args->arg2, buf, user_args->arg3) != 0) {
+			ERROR("Could not copy buffer contents from user\n");
+			kfree(user_args);
+			kfree(args);
+			kfree(buf);
+		}
+		
+		args->arg1 = user_args->arg1;
+		args->arg2 = (size_t) buf;
+		args->arg3 = user_args->arg3;
+		break;
+
+	case HVM_DEL_REQ_CLOSE:
+		args->arg1 = user_args->arg1;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	asm volatile (
+		"movq %1, %%r8;"
+		"out %2, %3;"
+		"movq %%r8, %0;"
+
+		: "=r" (retval)
+		: "r" (kernel_args_phys_addr), "a" (ioctl), "d" (port)
+		: "%r8"
+	);
+
+	switch (ioctl) {
+
+	case HVM_DEL_REQ_OPEN:
+		kfree(buf);
+		break;
+
+	case HVM_DEL_REQ_READ:
+		if (copy_to_user((void __user*)user_args->arg2, buf, args->arg3) != 0) {
+			ERROR("Could not copy buffer contents to user\n");
+			retval = -EFAULT;
+		}
+		kfree(buf);
+		break;
+	
+	case HVM_DEL_REQ_WRITE:
+		kfree(buf);
+		break;
+
+	case HVM_DEL_REQ_CLOSE:
+		// TODO: Some kind of host-to-guest errno
+		break;
+	
+	default:
+		break;
+	}
+
+	kfree(user_args);
+	kfree(args);
+
+    return retval;
 }
 
 
