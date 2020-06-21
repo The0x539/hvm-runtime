@@ -21,14 +21,17 @@ int main (int argc, char ** argv)
         exit(EXIT_FAILURE);
     }
 
-    struct hvm_del_args open_args = {
-		(size_t) "/etc/hostname",
+	char *filename = "./sample.txt";
+
+    struct hvm_del_req open_req = {
+		HVM_DEL_REQ_OPEN,
+		(size_t) filename,
 		O_RDONLY,
 		0,
 	};
 
     puts("Opening host file descriptor");
-    int host_fd = ioctl(driver_fd, HVM_DEL_REQ_OPEN, &open_args);
+    int host_fd = ioctl(driver_fd, 1, &open_req);
 
     if (host_fd < 0) {
         fprintf(stderr, "Ioctl failed: %s\n", strerror(errno));
@@ -36,14 +39,17 @@ int main (int argc, char ** argv)
     }
 
 	char buf[BUF_LEN+1] = {0};
-	struct hvm_del_args read_args = {
-		host_fd,
-		(size_t) buf,
+	struct hvm_del_req read_req = {
+		HVM_DEL_REQ_READ,
+		(size_t) host_fd,
+		(size_t) &buf[0],
 		BUF_LEN,
 	};
 
 	puts("Reading from host fd");
-	int nbytes = ioctl(driver_fd, HVM_DEL_REQ_READ, &read_args);
+	int nbytes = ioctl(driver_fd, 1, &read_req);
+
+	printf("nbytes = %d\n", nbytes);
 
 	if (nbytes < 0) {
 		fprintf(stderr, "Ioctl failed: %s\n", strerror(errno));
@@ -52,12 +58,13 @@ int main (int argc, char ** argv)
 
 	puts(buf);
 
-	struct hvm_del_args close_args = {
+	struct hvm_del_req close_req = {
+		HVM_DEL_REQ_CLOSE,
 		host_fd,
 	};
 
 	puts("Closing host fd");
-	int ret = ioctl(driver_fd, HVM_DEL_REQ_CLOSE, &close_args);
+	int ret = ioctl(driver_fd, 1, &close_req);
 
 	if (ret != 0) {
 		fprintf(stderr, "Ioctl failed: %s\n", strerror(errno));

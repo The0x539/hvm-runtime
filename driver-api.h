@@ -10,11 +10,11 @@
 #define HVM_DEL_REQ_WRITE 0x3
 #define HVM_DEL_REQ_CLOSE 0x4
 
-struct hvm_del_args {
+struct hvm_del_req {
+	size_t req_id;
+	size_t arg0;
 	size_t arg1;
 	size_t arg2;
-	size_t arg3;
-	size_t arg4;
 };
 
 #endif
