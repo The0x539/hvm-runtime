@@ -24,7 +24,8 @@ MODULE_DESCRIPTION("HVM delegator module");
 MODULE_VERSION(VERSION);
 
 #define ERROR(fmt, args...) printk(KERN_ERR "HVM-DEL: " fmt, ##args)
-#define INFO(fmt, args...) printk(KERN_INFO "HVM-DEL: " fmt, ##args)
+//#define INFO(fmt, args...) printk(KERN_INFO "HVM-DEL: " fmt, ##args)
+#define INFO(...)
 
 #if DEBUG_ENABLE==1
 #define DEBUG(fmt, args...) printk(KERN_DEBUG "HVM-DEL: " fmt, ##args)

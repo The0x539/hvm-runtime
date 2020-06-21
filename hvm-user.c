@@ -11,17 +11,20 @@
 
 #include "driver-api.h"
 
-#define BUF_LEN 64
+#define BUF_LEN 512
 
-int main (int argc, char ** argv) 
-{
+int main (int argc, char ** argv) {
+	if (argc == 1) {
+		return 0;
+	}
+
     int driver_fd = open("/dev/hvm", O_RDWR);
     if (driver_fd < 0) {
         fprintf(stderr, "Could not open hvm-del device: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-	char *filename = "./sample.txt";
+	char *filename = argv[1];
 
     struct hvm_del_req open_req = {
 		HVM_DEL_REQ_OPEN,
@@ -30,7 +33,7 @@ int main (int argc, char ** argv)
 		0,
 	};
 
-    puts("Opening host file descriptor");
+    //puts("Opening host file descriptor");
     int host_fd = ioctl(driver_fd, 1, &open_req);
 
     if (host_fd < 0) {
@@ -38,7 +41,7 @@ int main (int argc, char ** argv)
         exit(EXIT_FAILURE);
     }
 
-	char buf[BUF_LEN+1] = {0};
+	char buf[BUF_LEN] = {0};
 	struct hvm_del_req read_req = {
 		HVM_DEL_REQ_READ,
 		(size_t) host_fd,
@@ -46,24 +49,26 @@ int main (int argc, char ** argv)
 		BUF_LEN,
 	};
 
-	puts("Reading from host fd");
-	int nbytes = ioctl(driver_fd, 1, &read_req);
+	int nbytes = 0;
 
-	printf("nbytes = %d\n", nbytes);
+	do {
+		//puts("Reading from host fd");
+		nbytes = ioctl(driver_fd, 1, &read_req);
 
-	if (nbytes < 0) {
-		fprintf(stderr, "Ioctl failed: %s\n", strerror(errno));
-		exit(EXIT_FAILURE);
-	}
+		if (nbytes < 0) {
+			fprintf(stderr, "Ioctl failed: %s\n", strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 
-	puts(buf);
+		write(fileno(stdout), buf, nbytes);
+	} while (nbytes == BUF_LEN);
 
 	struct hvm_del_req close_req = {
 		HVM_DEL_REQ_CLOSE,
 		host_fd,
 	};
 
-	puts("Closing host fd");
+	//puts("Closing host fd");
 	int ret = ioctl(driver_fd, 1, &close_req);
 
 	if (ret != 0) {
