@@ -9,6 +9,7 @@
 #define HVM_DEL_REQ_READ 0x2
 #define HVM_DEL_REQ_WRITE 0x3
 #define HVM_DEL_REQ_CLOSE 0x4
+#define HVM_DEL_REQ_GETTIMEOFDAY 0x5
 
 struct hvm_del_req {
 	size_t req_id;

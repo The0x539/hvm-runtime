@@ -12,9 +12,19 @@
 #include <linux/types.h>
 #include <linux/cdev.h>
 
+#include <asm/io.h> // for virt_to_phys
+#include <uapi/linux/time_types.h> // for timespec
+
 #include "driver-api.h"
 
-#define DEBUG_ENABLE 1
+/*
+phys_addr_t virt_to_phys(volatile void * address) {
+	printk("please no\n");
+	return NULL;
+}
+*/
+
+#define DEBUG_ENABLE 0
 #define VERSION "0.1"
 #define CHRDEV_NAME "hvm"
 
@@ -24,14 +34,20 @@ MODULE_DESCRIPTION("HVM delegator module");
 MODULE_VERSION(VERSION);
 
 #define ERROR(fmt, args...) printk(KERN_ERR "HVM-DEL: " fmt, ##args)
-//#define INFO(fmt, args...) printk(KERN_INFO "HVM-DEL: " fmt, ##args)
-#define INFO(...)
+#define INFO(fmt, args...) printk(KERN_INFO "HVM-DEL: " fmt, ##args)
+//#define INFO(...)
 
 #if DEBUG_ENABLE==1
 #define DEBUG(fmt, args...) printk(KERN_DEBUG "HVM-DEL: " fmt, ##args)
 #else 
 #define DEBUG(fmt, args...)
 #endif
+
+static inline uint64_t timestamp(void) {
+	uint32_t lo, hi;
+	asm volatile("rdtscp" : "=a"(lo), "=d"(hi));
+	return lo | ((uint64_t)(hi) << 32);
+}
 
 struct hvm_del_info {
     struct mutex lock;
@@ -104,7 +120,7 @@ hvm_del_ioctl (struct file * file,
 
 	char *buf = NULL;
 
-    INFO("IOCTL %d\n", ioctl);
+    DEBUG("IOCTL %d\n", ioctl);
 
     user_req = kzalloc(sizeof(*user_req), GFP_KERNEL);
     if (copy_from_user(user_req, argp, sizeof(*user_req)) != 0) {
@@ -116,13 +132,13 @@ hvm_del_ioctl (struct file * file,
 	req = kzalloc(sizeof(*req), GFP_KERNEL);
 	kernel_req_phys_addr = virt_to_phys(req);
 
-	INFO("hvm_del_req 0x%X 0x%016lX\n", ioctl, kernel_req_phys_addr);
+	DEBUG("hvm_del_req 0x%X 0x%016lX\n", ioctl, kernel_req_phys_addr);
 
 	switch (user_req->req_id) {
 	case HVM_DEL_REQ_OPEN:
-		INFO("open\n");
+		DEBUG("open\n");
 		path_len = strnlen_user((char __user*)user_req->arg0, HOST_MAX_PATH);
-		INFO("path_len = %ld\n", path_len);
+		DEBUG("path_len = %ld\n", path_len);
 		if (path_len == 0) {
 			ERROR("Could not determine length of host filepath\n");
 			kfree(user_req);
@@ -135,6 +151,8 @@ hvm_del_ioctl (struct file * file,
 			return -ENAMETOOLONG;
 		}
 		
+		path_len += 1; // space for null terminator?
+
 		buf = kzalloc(path_len, GFP_KERNEL);
 
 		if (copy_from_user(buf, (char __user*)user_req->arg0, path_len) != 0) {
@@ -151,8 +169,8 @@ hvm_del_ioctl (struct file * file,
 		break;
 
 	case HVM_DEL_REQ_READ:
-		INFO("read\n");
-		INFO("count = %ld\n", user_req->arg2);
+		DEBUG("read\n");
+		DEBUG("count = %ld\n", user_req->arg2);
 		buf = kzalloc(user_req->arg2, GFP_KERNEL);
 		
 		req->arg0 = user_req->arg0;
@@ -177,12 +195,21 @@ hvm_del_ioctl (struct file * file,
 	case HVM_DEL_REQ_CLOSE:
 		req->arg0 = user_req->arg0;
 		break;
+	
+	case HVM_DEL_REQ_GETTIMEOFDAY:
+		buf = kzalloc(sizeof(struct __kernel_timespec), GFP_KERNEL);
+		DEBUG("timespec buf GVA: %p\n", buf);
+		req->arg0 = virt_to_phys(buf);
+		DEBUG("timespec buf GPA: %lx\n", req->arg0);
+		break;
 
 	default:
 		return -EINVAL;
 	}
 
-	INFO("About to invoke request...\n");
+	DEBUG("About to invoke request...\n");
+
+	//uint64_t t_a = timestamp();
 
 	asm volatile (
 		"movq %1, %%r8;"
@@ -193,6 +220,11 @@ hvm_del_ioctl (struct file * file,
 		: "r" (kernel_req_phys_addr), "a" ((uint32_t)user_req->req_id), "d" (port)
 		: "%r8"
 	);
+
+	//uint64_t t_b = timestamp();
+	//INFO("%lld (%lld - %lld)\n", t_b - t_a, t_b, t_a);
+
+	DEBUG("req_id: %ld", user_req->req_id);
 
 	switch (user_req->req_id) {
 
@@ -214,6 +246,19 @@ hvm_del_ioctl (struct file * file,
 
 	case HVM_DEL_REQ_CLOSE:
 		// TODO: Some kind of host-to-guest errno
+		break;
+	
+	case HVM_DEL_REQ_GETTIMEOFDAY:
+		DEBUG(
+			"%lld %lld\n",
+			((struct __kernel_timespec *)buf)->tv_sec,
+			((struct __kernel_timespec *)buf)->tv_nsec
+		);
+		if (copy_to_user((void __user*)user_req->arg0, buf, sizeof(struct __kernel_timespec)) != 0) {
+			ERROR("Could not copy timespec data to user\n");
+			retval = -EFAULT;
+		}
+		kfree(buf);
 		break;
 	
 	default:
